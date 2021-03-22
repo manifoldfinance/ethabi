@@ -23,6 +23,7 @@ pub enum Operation {
 	Event(Event),
 	/// Fallback, ignored.
 	Fallback,
+	Receive,
 }
 
 impl<'a> Deserialize<'a> for Operation {
@@ -53,7 +54,8 @@ impl<'a> Deserialize<'a> for Operation {
 				Operation::Event(e)
 			}),
 			"fallback" => Ok(Operation::Fallback),
-			_ => Err(SerdeError::custom("Invalid operation type.")),
+			"receive" => Ok(Operation::Receive),
+			other => Err(SerdeError::custom(format!("Invalid operation type {}.", other))),
 		};
 		result.map_err(|e| D::Error::custom(e.to_string()))
 	}
@@ -62,7 +64,8 @@ impl<'a> Deserialize<'a> for Operation {
 #[cfg(test)]
 mod tests {
 	use super::Operation;
-	use crate::{Function, Param, ParamType};
+	use crate::{Event, EventParam, Function, Param, ParamType, StateMutability};
+	use serde_json;
 
 	#[test]
 	fn deserialize_operation() {
@@ -85,6 +88,69 @@ mod tests {
 				inputs: vec![Param { name: "a".to_owned(), kind: ParamType::Address }],
 				outputs: vec![],
 				constant: false,
+				state_mutability: StateMutability::NonPayable,
+			})
+		);
+	}
+
+	#[test]
+	fn deserialize_event_operation_with_tuple_array_input() {
+		let s = r#"{
+			"type":"event",
+			"inputs": [
+				{
+					"name":"a",
+					"type":"address",
+					"indexed":true
+				},
+				{
+				  "components": [
+					{
+					  "internalType": "address",
+					  "name": "to",
+					  "type": "address"
+					},
+					{
+					  "internalType": "uint256",
+					  "name": "value",
+					  "type": "uint256"
+					},
+					{
+					  "internalType": "bytes",
+					  "name": "data",
+					  "type": "bytes"
+					}
+				  ],
+				  "indexed": false,
+				  "internalType": "struct Action[]",
+				  "name": "b",
+				  "type": "tuple[]"
+				}
+			],
+			"name":"E",
+			"outputs": [],
+			"anonymous": false
+		}"#;
+
+		let deserialized: Operation = serde_json::from_str(s).unwrap();
+
+		assert_eq!(
+			deserialized,
+			Operation::Event(Event {
+				name: "E".to_owned(),
+				inputs: vec![
+					EventParam { name: "a".to_owned(), kind: ParamType::Address, indexed: true },
+					EventParam {
+						name: "b".to_owned(),
+						kind: ParamType::Array(Box::new(ParamType::Tuple(vec![
+							ParamType::Address,
+							ParamType::Uint(256),
+							ParamType::Bytes
+						]))),
+						indexed: false
+					},
+				],
+				anonymous: false,
 			})
 		);
 	}
